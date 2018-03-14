@@ -134,3 +134,145 @@ function getMotor(key){
         
   }).catch();
 }
+
+
+
+exports.notifServiceMotor = functions.https.onRequest((req, res) => {
+  const key = req.query.key;
+
+  // Exit if the keys don't match
+  if (!secureCompare(key, functions.config().cron.key)) {
+    console.log('The key provided in the request does not match the key set in the environment. Check that', key,
+      'matches the cron.key attribute in `firebase env:get`');
+    res.status(403).send('Security key does not match. Make sure your "key" URL query parameter matches the ' +
+      'cron.key environment variable.');
+    return null;
+  }
+  var query = admin.database().ref("users").orderByKey();
+  query.once("value")
+  .then(snapshot => {
+    snapshot.forEach(childSnapshot => {
+      // key will be "ada" the first time and "alan" the second time
+      var key = childSnapshot.key;
+      // childData will be the actual contents of the child
+      var childData = childSnapshot.val();
+      
+      getDataMotor(childData,key);
+      
+    }); 
+    return null;
+  }).catch();
+    
+  return res.send('finish');
+  // Fetch all user details.
+  // return getUsers();
+});
+
+
+function getDataMotor(childData,key){
+  let motor, motors = [];
+      const oldItemsQuery = admin.database().ref('/motors/'+key).orderByKey();
+      oldItemsQuery.once('value').then(snapshot => {
+        // create a map with all children that need to be removed
+        
+        snapshot.forEach((childSnapshot) => {
+          motor = childSnapshot.val();
+          console.log("Data motor : "+motor.idmotor);
+          console.log("Data User :"+childData.uid);
+          console.log("Data U :"+motor.km_NextService+"-"+motor.km_now);
+          var ok = motor.km_NextService-motor.km_now;
+          console.log("Data s :"+ok);
+          motors.push(motor);
+          // sendNotif(motor,childData);
+          if(ok <=700){
+            
+            sendNotif(motor,childData);
+          }
+        //   var kilometer = 2*(motor.km_ratarata) + motor.km_now;
+        // console.log("Km motor "+kilometer);
+        // const query = admin.database().ref('/motors/'+key+'/'+motor.idmotor).update({km_now: kilometer});
+        });
+        // console.log(motors.length + " motor retrieved");
+        // console.log("ID Motor: "+motor.idmotor);     
+
+        return true;
+        
+  }).catch();
+}
+
+function sendNotif(motor,childData) {
+
+    const userID = childData.uid;
+    // const orderID = order.oid;
+
+  
+      // Get the list of device notification tokens.
+      const getUserTokensPromise = admin.database().ref(`users/${userID}/userTokens`).once('value');
+
+      // Get the Siswa profile.
+      const getUserProfilePromise = admin.auth().getUser(userID);
+
+      return Promise.all([getUserTokensPromise, getUserProfilePromise]).then(results => {
+      const tokensSnapshot = results[0];
+      const user = results[1];
+      const titleNotifications = 'Peringatan SERVICE !!';
+
+    // Check if there are any device tokens.
+    if (!tokensSnapshot.hasChildren()) {
+      return console.log('There are no notification tokens to send to.');
+    }
+    console.log('There are', tokensSnapshot.numChildren(), 'tokens to send notifications to.');
+    console.log('Fetched user profile', user);
+
+    // Notification details.
+    const payload = {
+      data: {  
+            orderid: motor.idmotor,            
+        },
+      notification: {
+        title: titleNotifications,
+        body: `${user.displayName} Motor Anda ${motor.merk} ${motor.plat} hampir memasuki masa service,` || user.photoURL,
+        sound: `default`,
+        icon: user.photoURL
+      }
+    };
+    
+    // Listing all tokens.
+    const tokens = Object.keys(tokensSnapshot.val());
+
+    send(tokens,payload);
+    return true;
+  });  
+    
+
+  function send(tokens,payload){
+    const options = {
+        priority: "high",
+        vibrate: [100, 50, 100],
+        timeToLive: 60 * 60 * 24,
+        actions: [
+          {action: 'explore', title: 'Explore this new world',
+            icon: 'images/checkmark.png'},
+          {action: 'close', title: 'Close notification',
+            icon: 'images/xmark.png'},
+        ]
+};
+  // Send notifications to all tokens.
+    return admin.messaging().sendToDevice(tokens, payload, options).then(response => {
+      // For each message check if there was an error.
+      const tokensToRemove = [];
+      response.results.forEach((result, index) => {
+        const error = result.error;
+        if (error) {
+          console.error('Failure sending notification to', tokens[index], error);
+          // Cleanup the tokens who are not registered anymore.
+          if (error.code === 'messaging/invalid-registration-token' ||
+              error.code === 'messaging/registration-token-not-registered') {
+            tokensToRemove.push(tokensSnapshot.ref.child(tokens[index]).remove());
+          }
+        }
+      });
+      return Promise.all(tokensToRemove);
+    });
+  }
+}
