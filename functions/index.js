@@ -222,7 +222,7 @@ function sendNotif(motor,childData) {
       return console.log('There are no notification tokens to send to.');
     }
     console.log('There are', tokensSnapshot.numChildren(), 'tokens to send notifications to.');
-    console.log('Fetched user profile', user);
+    console.log('User data', user);
 
     // Notification details.
     const payload = {
@@ -233,7 +233,11 @@ function sendNotif(motor,childData) {
         title: titleNotifications,
         body: `${user.displayName} Motor Anda ${motor.merk} ${motor.plat} hampir memasuki masa service,` || user.photoURL,
         sound: `default`,
-        icon: user.photoURL
+        icon: `ic_add`,
+        color: 'red',
+        priority: `high`,
+        vibrate: `[0,250,200,250]`,
+        timeToLive: `60 * 60 * 24`
       }
     };
     
@@ -244,11 +248,11 @@ function sendNotif(motor,childData) {
     return true;
   });  
     
-
+  // Notification(pri=2 contentView=null vibrate=[0,250,200,250] sound=android.resource://com.facebook.katana/raw2/new_facebook_ringtone_7 tick defaults=0x0 flags=0x11 color=0xff4267b2 vis=PRIVATE)
   function send(tokens,payload){
     const options = {
-        priority: "high",
-        vibrate: [100, 50, 100],
+        priority: 'high',
+        vibrate: [0,250,200,250],
         timeToLive: 60 * 60 * 24,
         actions: [
           {action: 'explore', title: 'Explore this new world',
